@@ -1,8 +1,3 @@
-# !pip install selenium
-# !pip install pymongo
-# !pip install tqdm
-# !pip install python-dotenv
-
 import requests
 import numpy as np
 import pandas as pd
@@ -15,25 +10,27 @@ import time
 import os
 from pymongo import MongoClient
 import pprint
-from tqdm import tqdm_notebook, tqdm
+from tqdm import tqdm
+from dotenv import load_dotenv
 
-# Number of problems on website
-num_problems = 439
-
-# pprint
-pp = pprint.PrettyPrinter(indent=4)
+# Parameters
+machine = 'aws' # 'aws' or 'local'
+num_problems = 439 # Number of problems on website
 
 # Connect to database
-client = MongoClient()
+if machine == 'aws':
+    client = MongoClient()   
+elif machine == 'local':
+    client = MongoClient("mongodb://cjm715:password@3.17.141.166/py2cpp")
 db = client.py2cpp
+print(f'Number of python db documents: {db.python.count()}')
+print(f'Number of C++ db documents: {db.cpp.count()}')
 
 # Load website and credentials
-from dotenv import load_dotenv
 load_dotenv()
 EMAIL = os.environ.get('USERNAME')
 PASSWORD = os.environ.get('PASSWORD')
 WEBSITE = os.environ.get('WEBSITE')
-print(WEBSITE)
 
 # Language options
 python_options = {
@@ -49,40 +46,46 @@ cpp_options = {
     'db_collection': db.cpp
 }
 
+# Setting up selenium web driver
+if machine == 'aws':
+    chromedriver = "/bin/chromedriver"
+elif machine == 'local':
+    chromedriver = "/Applications/chromedriver" 
+os.environ["webdriver.chrome.driver"] = chromedriver
+options = Options()
+if machine == 'aws':
+    options.add_argument("--headless")
+    options.add_argument("--window-size=1920x1080")
+    options.binary_location =  "/bin/headless-chromium"
+     
 # Helper function for sleeping
 def sleeper(lower,higher):
     delay = lower + (higher-lower)*np.random.random()
     time.sleep(delay)
 
+def open_website():
+    # Open up website
+    driver = webdriver.Chrome(chromedriver,options=options)
+    driver.get(WEBSITE)
+    sleeper(5,10)
 
-chromedriver = "/bin/chromedriver" # path to the chromedriver executable
-os.environ["webdriver.chrome.driver"] = chromedriver
-options = Options()
-# Headless option
-options.add_argument("--headless")
-options.add_argument("--window-size=1920x1080")
-options.binary_location =  "/bin/headless-chromium"
+    # Login
+    username_field = driver.find_element_by_id('input-1')
+    username_field.send_keys(EMAIL) 
+    sleeper(5,10)
+    pw_field = driver.find_element_by_id('input-2')
+    pw_field.send_keys(PASSWORD) 
+    sleeper(5,10)
+    driver.find_elements_by_tag_name('button')[0].click()
+    sleeper(5,10)
+    driver.find_elements_by_tag_name('button')[0].click()
+    sleeper(5,10)
 
-# Open up website
-driver = webdriver.Chrome(chromedriver,options=options)
-driver.get(WEBSITE)
-sleeper(5,10)
-
-# Login
-username_field = driver.find_element_by_id('input-1')
-username_field.send_keys(EMAIL) 
-sleeper(5,10)
-pw_field = driver.find_element_by_id('input-2')
-pw_field.send_keys(PASSWORD) 
-sleeper(5,10)
-driver.find_elements_by_tag_name('button')[0].click()
-sleeper(5,10)
-driver.find_elements_by_tag_name('button')[0].click()
-sleeper(5,10)
-
-# Go to algorithms page
-driver.find_element_by_link_text('Algorithms').click()
-sleeper(5,10)
+    # Go to algorithms page
+    driver.find_element_by_link_text('Algorithms').click()
+    sleeper(5,10)
+    
+    return driver
 
 # Function to go to a particular challenge problem by id
 def go_to_leaderboard(req_challenge_id):
@@ -142,6 +145,7 @@ def go_to_leaderboard(req_challenge_id):
     return challenge_title,challenge_difficulty,max_score,success_rate
 
 # Filter by language (used soon in two cells)
+
 def filter_by_language(lang_options):
     sleeper(1,3)
     language_field = driver.find_elements_by_class_name('ac-input')[1]
@@ -156,11 +160,14 @@ def filter_by_language(lang_options):
     sleeper(1,3)
     language_field.send_keys(Keys.ENTER)
     sleeper(1,3)
-    
 
 # Collect solutions
-max_page_number = 20
-solutions_per_page = 5 # Pick number less than 20. 20 is the number per page.
+min_page = 5
+max_page = 10
+solutions_per_page = 20 # Pick number less than 20. 20 is the number per page.
+
+
+driver = open_website()
 
 #Loop over problems
 for problem_id in range(num_problems):
@@ -172,56 +179,57 @@ for problem_id in range(num_problems):
         filter_by_language(lang_options)
 
         # Loops through pages
-        final_page_num = int(driver.find_element_by_class_name('last-page').text)
-        last_page = min(max_page_number,final_page_num) 
-        for i in tqdm(range(last_page)):
-
-            # Loops through solutions on page
-            for j in range(solutions_per_page):
+        last_page = int(driver.find_element_by_class_name('last-page').text) - 1
+        min_page_capped = min(min_page,last_page)
+        max_page_capped = min(max_page,last_page) 
+        for i in range(max_page_capped + 1):
+            if i >= min_page_capped:
                 
-                # Get meta data on solution such as rank, language, and score
-                row = driver.find_elements_by_class_name('table-row')[j]
-                sleeper(0,1)
-                elementList = row.find_elements_by_class_name('table-row-column')
-                text_info = [ elem.text for elem in elementList ]
-                rank = int(text_info[1])
-                language = text_info[3]
-                score = float(text_info[4])
+                # Loops through solutions on page
+                for j in range(solutions_per_page):
 
-                # Navigate to solution page and get code as a string
-                solution_links = driver.find_elements_by_link_text('View solution')
-                lin = solution_links[j]
-                url = lin.get_attribute('href')
-                driver.get(url)
+                    # Get meta data on solution such as rank, language, and score
+                    row = driver.find_elements_by_class_name('table-row')[j]
+                    elementList = row.find_elements_by_class_name('table-row-column')
+                    text_info = [ elem.text for elem in elementList ]
+                    rank = int(text_info[1])
+                    language = text_info[3]
+                    score = float(text_info[4])
 
-                b = driver.find_element_by_tag_name('body')
-                code = b.text
+                    # Navigate to solution page and get code as a string
+                    solution_links = driver.find_elements_by_link_text('View solution')
+                    lin = solution_links[j]
+                    url = lin.get_attribute('href')
+                    driver.get(url)
+                    sleeper(1.0,2.0)
+                    b = driver.find_element_by_tag_name('body')
+                    code = b.text
 
-                # Save to mongodb server
-                doc = {
-                    'challenge_title': c_title,
-                    'challenge_difficulty': c_difficulty,
-                    'max_score': c_max_score,
-                    'success_rate': c_success_rate,
-                    'rank' : rank,
-                    'language' : language,
-                    'score': score,
-                    'code' : code
-                }
-    #             pp.pprint(doc)
-                lang_options['db_collection'].insert_one(doc)
-                sleeper(1,2)
-                # Navigate back to solutions list
-                driver.back()
-
-                sleeper(1,2)
-
+                    # Save to mongodb server
+                    doc = {
+                        'challenge_title': c_title,
+                        'challenge_difficulty': c_difficulty,
+                        'max_score': c_max_score,
+                        'success_rate': c_success_rate,
+                        'rank' : rank,
+                        'language' : language,
+                        'score': score,
+                        'code' : code
+                    }
+        #             pp.pprint(doc)
+                    try:
+                        lang_options['db_collection'].insert_one(doc)
+                    except:
+                        pass
+                    
+                    # Navigate back to solutions list
+                    driver.back()
+                    sleeper(1.0,2.0)
 
             # Navigate to next page if it exists
-            sleeper(2,4)   
             next_page_elem = driver.find_element_by_class_name('next-page')
             if 'disabled' in next_page_elem.get_attribute('class'):
                 break
             else:
-                next_page_elem.click()
+                next_page_elem.find_element_by_tag_name('a').click()
             sleeper(3,6) 
