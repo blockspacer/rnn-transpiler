@@ -53,6 +53,8 @@ elif machine == 'local':
     chromedriver = "/Applications/chromedriver" 
 os.environ["webdriver.chrome.driver"] = chromedriver
 options = Options()
+# Headless option
+
 if machine == 'aws':
     options.add_argument("--headless")
     options.add_argument("--window-size=1920x1080")
@@ -160,10 +162,11 @@ def filter_by_language(lang_options):
     sleeper(1,3)
     language_field.send_keys(Keys.ENTER)
     sleeper(1,3)
-
+    
+    
 # Collect solutions
-min_page = 5
-max_page = 10
+min_page = 11
+max_page = 19
 solutions_per_page = 20 # Pick number less than 20. 20 is the number per page.
 
 
@@ -186,9 +189,12 @@ for problem_id in range(num_problems):
             if i >= min_page_capped:
                 
                 # Loops through solutions on page
+                solutions_per_page=len(driver.find_elements_by_class_name('table-row'))
                 for j in range(solutions_per_page):
 
                     # Get meta data on solution such as rank, language, and score
+                    print(j,solutions_per_page,len(driver.find_elements_by_class_name('table-row')))
+                    
                     row = driver.find_elements_by_class_name('table-row')[j]
                     elementList = row.find_elements_by_class_name('table-row-column')
                     text_info = [ elem.text for elem in elementList ]
