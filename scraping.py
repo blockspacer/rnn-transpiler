@@ -115,6 +115,7 @@ def go_to_leaderboard(req_challenge_id):
     sleeper(5,10)
     
    
+    #
     # Get individual challenge data and click 
     challenge_list = driver.find_element_by_class_name('challenges-list')
     challenge_item = challenge_list.find_elements_by_class_name('challenge-list-item')[req_challenge_id]
