@@ -9,3 +9,5 @@ scratch
 literature
 .envrc
 .direnv
+scraping.py
+sb
